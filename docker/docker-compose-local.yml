@@ -1,0 +1,13 @@
+services:
+  db:
+    image: postgres:16.11-alpine
+    volumes:
+      - dev-db-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-vetdb}
+      POSTGRES_USER: ${POSTGRES_USER:-vetuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vetpassword}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+volumes:
+  dev-db-data:

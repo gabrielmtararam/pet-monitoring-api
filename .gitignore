@@ -1,0 +1,14 @@
+env/
+envs/
+.scannerwork/
+.coverage
+coverage.xml
+staticfiles/
+__pycache__/
+.idea/
+media/
+media_test/
+.env
+celerybeat-schedule
+venv
+.venv
