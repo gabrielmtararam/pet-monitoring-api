@@ -112,7 +112,6 @@ def process_receita_with_gemini(receita: Receita) -> dict:
     suggestions = f"Sugestão de data (da página): {receita.data.isoformat()}.\n\n" if receita.data else ""
     prompt = PROMPT_RECEITA.format(catalog=catalog, suggestions=suggestions)
 
-    # Igual aos exames: mime_type pelo path e mesmo fluxo de upload
     mime_type = "application/pdf"
     if path.lower().endswith((".png", ".jpg", ".jpeg")):
         mime_type = "image/png" if path.lower().endswith(".png") else "image/jpeg"
