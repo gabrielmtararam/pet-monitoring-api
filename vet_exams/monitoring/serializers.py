@@ -1,5 +1,6 @@
-from rest_framework import serializers
+from datetime import timedelta
 
+from rest_framework import serializers
 from django.utils import timezone
 
 from vet_exams.monitoring.models import (
@@ -50,6 +51,10 @@ class WaterWeightLogSerializer(serializers.ModelSerializer):
             validated_data['observed_at'] = timezone.now()
         instance = super().create(validated_data)
         recalculate_daily_water_consumption_for_log(instance)
+        # The next calendar day uses this log as its opening balance for this bowl, so recalculate it too.
+        if instance.observed_at:
+            next_date = timezone.localdate(instance.observed_at) + timedelta(days=1)
+            recalculate_daily_water_consumption_for_log(instance, for_date=next_date)
         return instance
 
 
@@ -70,6 +75,10 @@ class FoodWeightLogSerializer(serializers.ModelSerializer):
             validated_data['observed_at'] = timezone.now()
         instance = super().create(validated_data)
         recalculate_daily_food_consumption_for_log(instance)
+        # The next calendar day uses this log as its opening balance, so recalculate it too.
+        if instance.observed_at:
+            next_date = timezone.localdate(instance.observed_at) + timedelta(days=1)
+            recalculate_daily_food_consumption_for_log(instance, for_date=next_date)
         return instance
 
 
