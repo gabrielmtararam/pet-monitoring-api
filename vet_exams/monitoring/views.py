@@ -55,8 +55,8 @@ class WaterWeightLogViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def bulk_create(self, request: Request):
         """
-        Cria múltiplos logs de peso de uma vez, usando o mesmo
-        entry_type e observed_at para todos os potes.
+        Create multiple weight logs at once, using the same
+        entry_type and observed_at for all bowls.
         """
         entry_type = request.data.get('entry_type', 'reading')
         observed_at = request.data.get('observed_at')
@@ -131,8 +131,8 @@ class AnimalDiaryEntryViewSet(viewsets.ModelViewSet):
 
 class MonitoringExportAPIView(APIView):
     """
-    Retorna um JSON consolidado com os dados de monitoramento
-    (potes, logs de água, logs de ração, diário e agregados diários) para um animal.
+    Return consolidated JSON with monitoring data
+    (bowls, water logs, food logs, diary and daily aggregates) for an animal.
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -146,11 +146,8 @@ class MonitoringExportAPIView(APIView):
         except (TypeError, ValueError):
             return Response({'detail': 'animal_id inválido.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Garante que o animal pertence ao usuário via relações existentes
         bowls_qs = WaterBowl.objects.filter(animal_id=animal_id_int, animal__guardian=request.user)
         if not bowls_qs.exists():
-            # Se não houver nenhum pote para esse animal/usuário, ainda permitimos exportar,
-            # mas garantimos que o animal pertence ao usuário verificando diário ou logs de ração.
             has_any_data = (
                 FoodWeightLog.objects.filter(animal_id=animal_id_int, animal__guardian=request.user).exists()
                 or AnimalDiaryEntry.objects.filter(animal_id=animal_id_int, animal__guardian=request.user).exists()
@@ -158,7 +155,6 @@ class MonitoringExportAPIView(APIView):
             if not has_any_data:
                 return Response({'detail': 'Animal não encontrado ou sem dados para este usuário.'}, status=status.HTTP_404_NOT_FOUND)
 
-        # Antes de exportar, recalcula os agregados diários a partir dos logs atuais
         water_logs_all = WaterWeightLog.objects.filter(
             bowl__animal_id=animal_id_int,
             bowl__animal__guardian=request.user,

@@ -109,7 +109,7 @@ class AnimalExam(models.Model):
 
 
 class Remedio(models.Model):
-    """Medicamento para cadastro e uso em receitas (ex.: Vonau)."""
+    """Medicine for registration and use in prescriptions (e.g., Vonau)."""
     name = models.CharField(max_length=200)
     principio_ativo = models.CharField(
         max_length=200,
@@ -128,7 +128,7 @@ class Remedio(models.Model):
 
 
 class Receita(models.Model):
-    """Receita veterinária (ex.: extraída da página SimplesPet), com data e lista de indicações."""
+    """Veterinary prescription (e.g., extracted from SimplesPet page), with date and list of indications."""
     animal = models.ForeignKey(Animal, on_delete=models.CASCADE, related_name='receitas')
     data = models.DateField(help_text='Data da receita.')
     source_identifier = models.CharField(
@@ -164,16 +164,16 @@ class Receita(models.Model):
 
 class DailyWaterConsumption(models.Model):
     """
-    Consumo diário de água agregado por animal, considerando:
-    - Todos os potes de consumo (não referência)
-    - Potes de referência para estimar evaporação
-    - Períodos entre leituras, respeitando refills
+    Daily water consumption aggregated by animal, considering:
+    - All consumption bowls (non-reference)
+    - Reference bowls to estimate evaporation
+    - Periods between readings, respecting refills
     """
 
     animal = models.ForeignKey(Animal, on_delete=models.CASCADE, related_name='daily_water_consumptions')
     date = models.DateField()
 
-    # Valores em gramas (mesma unidade dos logs de água)
+
     gross_consumption = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -190,7 +190,7 @@ class DailyWaterConsumption(models.Model):
         help_text='Consumo líquido (gross_consumption - evaporation), truncado em zero quando negativo.',
     )
 
-    # Diagnósticos da consolidação
+
     negative_periods = models.PositiveIntegerField(
         default=0,
         help_text='Quantidade de períodos em que o consumo bruto calculado ficou negativo (possível refill não marcado).',
@@ -214,13 +214,13 @@ class DailyWaterConsumption(models.Model):
 
 class DailyFoodConsumption(models.Model):
     """
-    Consumo diário de ração agregado por animal, usando FoodWeightLog.
+    Daily food consumption aggregated by animal, using FoodWeightLog.
     """
 
     animal = models.ForeignKey(Animal, on_delete=models.CASCADE, related_name='daily_food_consumptions')
     date = models.DateField()
 
-    # Valores em gramas (mesma unidade dos logs de ração)
+
     total_consumption = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -322,7 +322,6 @@ def recalculate_daily_water_consumption_for_log(
 
         for prev, curr in zip(extended, extended[1:]):
             if curr.entry_type == 'refill':
-                # Refill indica troca de água: período não conta para consumo
                 continue
 
             if prev.weight is None or curr.weight is None:
@@ -330,7 +329,6 @@ def recalculate_daily_water_consumption_for_log(
 
             delta = prev.weight - curr.weight
             if delta < 0:
-                # Possível refill não marcado
                 negative_periods += 1
                 continue
 
@@ -501,8 +499,10 @@ def recalculate_daily_food_consumption_for_log(
 
 
 
+
+
 class IndicacaoMedicamento(models.Model):
-    """Indicação de medicação dentro de uma receita: remédio, apresentação, dosagem, frequência e período."""
+    """Medication indication within a prescription: medicine, presentation, dosage, frequency, and period."""
     receita = models.ForeignKey(Receita, on_delete=models.CASCADE, related_name='indicacoes')
     remedio = models.ForeignKey(Remedio, on_delete=models.CASCADE, related_name='indicacoes')
     forma_apresentacao = models.CharField(
@@ -610,7 +610,7 @@ class ExtractedExam(models.Model):
 
 
 class ExamOrganFinding(models.Model):
-    """Achado por órgão em exames de imagem (ex.: ultrassom): órgão + descrição narrativa."""
+    """Finding by organ in imaging exams (e.g., ultrasound): organ + narrative description."""
     exam = models.ForeignKey(ExtractedExam, on_delete=models.CASCADE, related_name='organ_findings')
     organ_name = models.CharField(max_length=200, help_text='Nome do órgão ou estrutura (ex.: Rins, Vesícula urinária).')
     description = models.TextField(help_text='Descrição/achado para esse órgão.')

@@ -18,8 +18,8 @@ from dotenv import load_dotenv
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Carrega variáveis de ambiente, primeiro do .env na raiz do projeto (../.env)
-# e depois do .env localizado em BASE_DIR (backend/.env), que tem precedência.
+# Load environment variables, prioritizing the .env in the root project directory (../.env)
+# over the .env located in BASE_DIR (backend/.env).
 load_dotenv(BASE_DIR.parent / ".env")
 load_dotenv(BASE_DIR / ".env")
 
@@ -48,8 +48,8 @@ USE_X_FORWARDED_HOST = os.environ.get('USE_X_FORWARDED_HOST', 'False') == 'True'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Chave usada pelo django-pgcrypto para criptografar/descriptografar campos.
-# Deve ser definida via ambiente em produção.
+# Key used by django-pgcrypto for database field encryption/decryption.
+# Must be set via environment variable in production.
 PGCRYPTO_KEY = os.environ.get('PGCRYPTO_KEY', 'dev-pgcrypto-key-change-me')
 
 
