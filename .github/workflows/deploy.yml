@@ -1,0 +1,23 @@
+name: Continuous Deployment (API)
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Production (API)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /home/gabrieltararam/vet
+            git config --global --add safe.directory /home/gabrieltararam/vet/backend
+            cd backend
+            git pull origin main
+            cd ..
+            docker compose up -d --build backend
