@@ -5,7 +5,12 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from google import genai
+import os
+from .exams_extraction import _get_genai_client
 from vet_exams.monitoring.exams_automation import run_login_automation, run_login_automation_receitas
+
+
 from vet_exams.monitoring.exams_extraction import process_first_downloaded_exam
 from vet_exams.monitoring.receitas_extraction import process_first_receita
 from vet_exams.monitoring.models import (
@@ -240,3 +245,28 @@ class ReceitasProcessAPIView(APIView):
         result = process_first_receita(request.user)
         response_status = status.HTTP_200_OK if result.get('success') else status.HTTP_400_BAD_REQUEST
         return Response(result, status=response_status)
+
+
+class ChatAPIView(APIView):
+    """
+    IA Chatbot endpoint for pet monitoring.
+    Receives a prompt and returns a response from Gemini.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request: Request):
+        prompt = request.data.get('prompt')
+        # animal_id = request.data.get('animal_id')
+
+        if not prompt:
+            return Response({'detail': 'O prompt é obrigatório.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            client = _get_genai_client()
+            response = client.models.generate_content(
+                model="gemini-2.0-flash-lite",
+                contents=[prompt],
+            )
+            return Response({'response': response.text}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
