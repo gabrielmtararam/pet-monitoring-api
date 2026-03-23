@@ -45,7 +45,6 @@ class WaterWeightLogSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
-        # Se o cliente não enviar observed_at, usar data/hora atual
         if not validated_data.get('observed_at'):
             validated_data['observed_at'] = timezone.now()
         instance = super().create(validated_data)
@@ -65,7 +64,6 @@ class FoodWeightLogSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
-        # Se o cliente não enviar observed_at, usar data/hora atual
         if not validated_data.get('observed_at'):
             validated_data['observed_at'] = timezone.now()
         instance = super().create(validated_data)
