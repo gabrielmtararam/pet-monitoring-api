@@ -134,9 +134,6 @@ def process_receita_with_gemini(receita: Receita) -> dict:
     )
     text = getattr(response, "text", None) or ""
     data = _extract_json_from_text(text)
-    print(f"prompt {prompt}")
-    print(f"file_part {file_part}")
-    print(f"data {data}")
     if not data:
         return {"success": False, "detail": "Resposta da IA não contém JSON válido.", "raw": text[:500]}
 
