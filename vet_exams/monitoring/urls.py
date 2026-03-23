@@ -13,6 +13,7 @@ from vet_exams.monitoring.views import (
     FoodWeightLogViewSet,
     WaterBowlViewSet,
     WaterWeightLogViewSet,
+    ChatAPIView,
 )
 
 router = DefaultRouter()
@@ -29,5 +30,6 @@ urlpatterns = [
     path('exams/update-medications/', ExamsUpdateMedicationsAPIView.as_view(), name='exams-update-medications'),
     path('receitas/process/', ReceitasProcessAPIView.as_view(), name='receitas-process'),
     path('export/', MonitoringExportAPIView.as_view(), name='monitoring-export'),
+    path('chat/', ChatAPIView.as_view(), name='monitoring-chat'),
     path('', include(router.urls)),
 ]

@@ -34,8 +34,7 @@ ANIMAL_NAME_SELECTOR = '#app .app-content-body .h2.ng-binding'
 
 def _build_chrome_driver() -> webdriver.Chrome:
     options = Options()
-    # "--headless=new" pode quebrar em algumas versões locais do Chromium/Chrome.
-    # Usamos o headless tradicional para maior compatibilidade.
+    # Headless mode for compatibility.
     options.add_argument('--headless')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')

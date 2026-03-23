@@ -12,6 +12,7 @@ from vet_exams.monitoring.models import (
     ExtractedExam,
     FoodBrand,
     FoodType,
+    FoodWeightLog,
     IndicacaoMedicamento,
     MeasurementUnit,
     ParameterType,
@@ -53,6 +54,16 @@ class FoodBrandAdmin(ImportExportModelAdmin):
 class FoodTypeAdmin(ImportExportModelAdmin):
   list_display = ('id', 'name')
   search_fields = ('name',)
+
+
+@admin.register(FoodWeightLog)
+class FoodWeightLogAdmin(ImportExportModelAdmin):
+  list_display = ('animal', 'weight', 'entry_type', 'brand', 'type', 'observed_at')
+  list_filter = ('entry_type', 'animal', 'brand', 'type')
+  search_fields = ('animal__name', 'brand__name', 'type__name')
+  autocomplete_fields = ('animal', 'brand', 'type')
+  date_hierarchy = 'observed_at'
+  ordering = ('-observed_at',)
 
 
 @admin.register(AnimalDiaryEntry)
@@ -145,7 +156,9 @@ class DailyWaterConsumptionAdmin(ImportExportModelAdmin):
 
 @admin.register(DailyFoodConsumption)
 class DailyFoodConsumptionAdmin(ImportExportModelAdmin):
-  list_display = ('animal', 'date', 'total_consumption', 'negative_periods', 'missing_readings')
-  list_filter = ('animal', 'date')
+  list_display = ('animal', 'date', 'total_consumption', 'negative_periods', 'missing_readings', 'created_at')
+  list_filter = ('animal', 'missing_readings')
   search_fields = ('animal__name',)
   date_hierarchy = 'date'
+  ordering = ('-date',)
+  readonly_fields = ('created_at',)

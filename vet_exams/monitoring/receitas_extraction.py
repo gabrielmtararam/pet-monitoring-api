@@ -112,7 +112,6 @@ def process_receita_with_gemini(receita: Receita) -> dict:
     suggestions = f"Sugestão de data (da página): {receita.data.isoformat()}.\n\n" if receita.data else ""
     prompt = PROMPT_RECEITA.format(catalog=catalog, suggestions=suggestions)
 
-    # Igual aos exames: mime_type pelo path e mesmo fluxo de upload
     mime_type = "application/pdf"
     if path.lower().endswith((".png", ".jpg", ".jpeg")):
         mime_type = "image/png" if path.lower().endswith(".png") else "image/jpeg"
@@ -134,9 +133,6 @@ def process_receita_with_gemini(receita: Receita) -> dict:
     )
     text = getattr(response, "text", None) or ""
     data = _extract_json_from_text(text)
-    print(f"prompt {prompt}")
-    print(f"file_part {file_part}")
-    print(f"data {data}")
     if not data:
         return {"success": False, "detail": "Resposta da IA não contém JSON válido.", "raw": text[:500]}
 

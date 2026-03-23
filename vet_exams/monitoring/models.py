@@ -1,5 +1,5 @@
 from decimal import Decimal
-from datetime import datetime, time
+from datetime import date as date_type, datetime, time, timedelta
 
 from django.db import models
 from django.utils import timezone
@@ -109,7 +109,7 @@ class AnimalExam(models.Model):
 
 
 class Remedio(models.Model):
-    """Medicamento para cadastro e uso em receitas (ex.: Vonau)."""
+    """Medicine for registration and use in prescriptions (e.g., Vonau)."""
     name = models.CharField(max_length=200)
     principio_ativo = models.CharField(
         max_length=200,
@@ -128,7 +128,7 @@ class Remedio(models.Model):
 
 
 class Receita(models.Model):
-    """Receita veterinária (ex.: extraída da página SimplesPet), com data e lista de indicações."""
+    """Veterinary prescription (e.g., extracted from SimplesPet page), with date and list of indications."""
     animal = models.ForeignKey(Animal, on_delete=models.CASCADE, related_name='receitas')
     data = models.DateField(help_text='Data da receita.')
     source_identifier = models.CharField(
@@ -164,16 +164,16 @@ class Receita(models.Model):
 
 class DailyWaterConsumption(models.Model):
     """
-    Consumo diário de água agregado por animal, considerando:
-    - Todos os potes de consumo (não referência)
-    - Potes de referência para estimar evaporação
-    - Períodos entre leituras, respeitando refills
+    Daily water consumption aggregated by animal, considering:
+    - All consumption bowls (non-reference)
+    - Reference bowls to estimate evaporation
+    - Periods between readings, respecting refills
     """
 
     animal = models.ForeignKey(Animal, on_delete=models.CASCADE, related_name='daily_water_consumptions')
     date = models.DateField()
 
-    # Valores em gramas (mesma unidade dos logs de água)
+
     gross_consumption = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -190,7 +190,7 @@ class DailyWaterConsumption(models.Model):
         help_text='Consumo líquido (gross_consumption - evaporation), truncado em zero quando negativo.',
     )
 
-    # Diagnósticos da consolidação
+
     negative_periods = models.PositiveIntegerField(
         default=0,
         help_text='Quantidade de períodos em que o consumo bruto calculado ficou negativo (possível refill não marcado).',
@@ -214,13 +214,13 @@ class DailyWaterConsumption(models.Model):
 
 class DailyFoodConsumption(models.Model):
     """
-    Consumo diário de ração agregado por animal, usando FoodWeightLog.
+    Daily food consumption aggregated by animal, using FoodWeightLog.
     """
 
     animal = models.ForeignKey(Animal, on_delete=models.CASCADE, related_name='daily_food_consumptions')
     date = models.DateField()
 
-    # Valores em gramas (mesma unidade dos logs de ração)
+
     total_consumption = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -248,21 +248,32 @@ class DailyFoodConsumption(models.Model):
         return f"Ração - {self.animal.name} em {self.date}"
 
 
-def recalculate_daily_water_consumption_for_log(log: WaterWeightLog) -> None:
+def recalculate_daily_water_consumption_for_log(
+    log: WaterWeightLog,
+    for_date: date_type | None = None,
+) -> None:
     """
-    Recalcula o consumo diário de água para o animal/data do log informado.
-    Implementa a lógica descrita pelo usuário de forma agregada por dia.
+    Recalculate daily water consumption for the animal/date of the given log.
+
+    The last log *before* the day starts is used as opening balance for each bowl,
+    so cross-day consumption (one reading per day pattern) is accounted for correctly.
+
+    Consumption bowls: gross consumption = sum of (prev - curr) when curr is a reading.
+    Reference bowls:   evaporation  = sum of (prev - curr) when delta > 0 (weight dropped).
+    Refill pairs are skipped for consumption; any delta is used for reference evaporation.
     """
-    if not log.observed_at:
+    if for_date is not None:
+        log_date = for_date
+    elif not log.observed_at:
         log_date = timezone.localdate()
     else:
         log_date = timezone.localdate(log.observed_at)
 
     animal = log.bowl.animal
 
-    tz = timezone.get_current_timezone()
-    start_dt = timezone.make_aware(datetime.combine(log_date, time.min), tz)
-    end_dt = timezone.make_aware(datetime.combine(log_date, time.max), tz)
+    local_tz = timezone.get_current_timezone()
+    start_dt = timezone.make_aware(datetime.combine(log_date, time.min), local_tz)
+    end_dt = timezone.make_aware(datetime.combine(log_date, time.max), local_tz)
 
     bowls_qs = WaterBowl.objects.filter(animal=animal)
     if not bowls_qs.exists():
@@ -277,20 +288,40 @@ def recalculate_daily_water_consumption_for_log(log: WaterWeightLog) -> None:
     negative_periods = 0
     missing_readings = False
 
-    # Consumo bruto por pote não-referência
     for bowl in consumption_bowls:
+        # Opening balance: last log for this bowl before today.
+        prev_log = (
+            WaterWeightLog.objects.filter(
+                bowl=bowl,
+                observed_at__lt=start_dt,
+                observed_at__isnull=False,
+            )
+            .order_by('-observed_at')
+            .first()
+        )
+
         logs_qs = (
-            WaterWeightLog.objects.filter(bowl=bowl, observed_at__gte=start_dt, observed_at__lte=end_dt)
+            WaterWeightLog.objects.filter(
+                bowl=bowl,
+                observed_at__gte=start_dt,
+                observed_at__lte=end_dt,
+            )
             .order_by('observed_at')
         )
         logs_list = list(logs_qs)
-        if len(logs_list) < 2 and logs_list:
+
+        if not logs_list:
+            continue
+
+        extended = ([prev_log] + logs_list) if prev_log else logs_list
+
+        # Need at least a pair to measure consumption.
+        if len(extended) < 2:
             missing_readings = True
             continue
 
-        for prev, curr in zip(logs_list, logs_list[1:]):
+        for prev, curr in zip(extended, extended[1:]):
             if curr.entry_type == 'refill':
-                # Refill indica troca de água: período não conta para consumo
                 continue
 
             if prev.weight is None or curr.weight is None:
@@ -298,24 +329,43 @@ def recalculate_daily_water_consumption_for_log(log: WaterWeightLog) -> None:
 
             delta = prev.weight - curr.weight
             if delta < 0:
-                # Possível refill não marcado
                 negative_periods += 1
                 continue
 
             gross_total += delta
 
-    # Evaporação a partir dos potes de referência
     for bowl in ref_bowls:
+        # Same opening balance logic for reference (evaporation) bowls.
+        prev_log = (
+            WaterWeightLog.objects.filter(
+                bowl=bowl,
+                observed_at__lt=start_dt,
+                observed_at__isnull=False,
+            )
+            .order_by('-observed_at')
+            .first()
+        )
+
         logs_qs = (
-            WaterWeightLog.objects.filter(bowl=bowl, observed_at__gte=start_dt, observed_at__lte=end_dt)
+            WaterWeightLog.objects.filter(
+                bowl=bowl,
+                observed_at__gte=start_dt,
+                observed_at__lte=end_dt,
+            )
             .order_by('observed_at')
         )
         logs_list = list(logs_qs)
-        if len(logs_list) < 2 and logs_list:
+
+        if not logs_list:
+            continue
+
+        extended = ([prev_log] + logs_list) if prev_log else logs_list
+
+        if len(extended) < 2:
             missing_readings = True
             continue
 
-        for prev, curr in zip(logs_list, logs_list[1:]):
+        for prev, curr in zip(extended, extended[1:]):
             if prev.weight is None or curr.weight is None:
                 continue
             delta = prev.weight - curr.weight
@@ -327,7 +377,6 @@ def recalculate_daily_water_consumption_for_log(log: WaterWeightLog) -> None:
         net = Decimal('0')
 
     if gross_total == 0 and evaporation_total == 0:
-        # Sem dados úteis no dia: remover eventual registro antigo
         DailyWaterConsumption.objects.filter(animal=animal, date=log_date).delete()
         return
 
@@ -344,24 +393,56 @@ def recalculate_daily_water_consumption_for_log(log: WaterWeightLog) -> None:
     )
 
 
-def recalculate_daily_food_consumption_for_log(log: FoodWeightLog) -> None:
+def recalculate_daily_food_consumption_for_log(
+    log: FoodWeightLog,
+    for_date: date_type | None = None,
+) -> None:
     """
-    Recalcula o consumo diário de ração para o animal/data do log informado.
-    Lógica similar à de água, mas sem pote de referência (apenas deltas entre leituras).
+    Recalculate daily food consumption for the animal/date of the given log.
+
+    `for_date` allows recalculating a specific date (e.g. the next day) without
+    a real log for that date.
+
+    The last food log *before* the day starts is included as an opening balance,
+    so cross-day consumption (e.g. a reading on day N-1 and one on day N) is
+    correctly accounted for.
+
+    Pairs processed (in observed_at order):
+    - reading -> reading: delta = prev - curr  (net consumption)
+    - refill  -> reading: delta = prev - curr  (consumption since last refill)
+    - *       -> refill : skip (bowl was topped up, not consumed)
+    - refill  -> refill : skip (consecutive refills, no consumption measured)
     """
-    if not log.observed_at:
+    if for_date is not None:
+        log_date = for_date
+    elif not log.observed_at:
         log_date = timezone.localdate()
     else:
         log_date = timezone.localdate(log.observed_at)
 
     animal = log.animal
 
-    tz = timezone.get_current_timezone()
-    start_dt = timezone.make_aware(datetime.combine(log_date, time.min), tz)
-    end_dt = timezone.make_aware(datetime.combine(log_date, time.max), tz)
+    local_tz = timezone.get_current_timezone()
+    start_dt = timezone.make_aware(datetime.combine(log_date, time.min), local_tz)
+    end_dt = timezone.make_aware(datetime.combine(log_date, time.max), local_tz)
+
+    # Opening balance: last log *before* today (any entry_type).
+    last_prev_log = (
+        FoodWeightLog.objects.filter(
+            animal=animal,
+            observed_at__lt=start_dt,
+            observed_at__isnull=False,
+        )
+        .order_by('-observed_at')
+        .first()
+    )
 
     logs_qs = (
-        FoodWeightLog.objects.filter(animal=animal, observed_at__gte=start_dt, observed_at__lte=end_dt)
+        FoodWeightLog.objects.filter(
+            animal=animal,
+            observed_at__gte=start_dt,
+            observed_at__lte=end_dt,
+        )
         .order_by('observed_at')
     )
     logs_list = list(logs_qs)
@@ -370,16 +451,21 @@ def recalculate_daily_food_consumption_for_log(log: FoodWeightLog) -> None:
         DailyFoodConsumption.objects.filter(animal=animal, date=log_date).delete()
         return
 
+    # Prepend previous day's last entry as opening balance for cross-day deltas.
+    extended_logs = ([last_prev_log] + logs_list) if last_prev_log else logs_list
+
     total = Decimal('0')
     negative_periods = 0
-    missing_readings = False
 
-    if len(logs_list) < 2:
-        missing_readings = True
+    # Count measurable pairs (those where curr is a reading, not a refill).
+    measurable_pairs = sum(
+        1 for _, curr in zip(extended_logs, extended_logs[1:]) if curr.entry_type != 'refill'
+    )
+    missing_readings = measurable_pairs == 0
 
-    for prev, curr in zip(logs_list, logs_list[1:]):
+    for prev, curr in zip(extended_logs, extended_logs[1:]):
+        # Skip any pair where the bowl was refilled — that represents a top-up, not consumption.
         if curr.entry_type == 'refill':
-            # Troca/abastecimento: não consideramos o período anterior como consumo
             continue
 
         if prev.weight is None or curr.weight is None:
@@ -387,6 +473,7 @@ def recalculate_daily_food_consumption_for_log(log: FoodWeightLog) -> None:
 
         delta = prev.weight - curr.weight
         if delta < 0:
+            # Negative delta suggests an unregistered refill between readings.
             negative_periods += 1
             continue
 
@@ -395,8 +482,8 @@ def recalculate_daily_food_consumption_for_log(log: FoodWeightLog) -> None:
     if total < 0:
         total = Decimal('0')
 
-    if total == 0 and not missing_readings:
-        # Sem consumo detectado e sem problema de leitura: apagar registro se existir
+    # No useful data: not enough measurable periods or all periods summed to zero.
+    if missing_readings or (total == 0 and measurable_pairs > 0):
         DailyFoodConsumption.objects.filter(animal=animal, date=log_date).delete()
         return
 
@@ -411,8 +498,11 @@ def recalculate_daily_food_consumption_for_log(log: FoodWeightLog) -> None:
     )
 
 
+
+
+
 class IndicacaoMedicamento(models.Model):
-    """Indicação de medicação dentro de uma receita: remédio, apresentação, dosagem, frequência e período."""
+    """Medication indication within a prescription: medicine, presentation, dosage, frequency, and period."""
     receita = models.ForeignKey(Receita, on_delete=models.CASCADE, related_name='indicacoes')
     remedio = models.ForeignKey(Remedio, on_delete=models.CASCADE, related_name='indicacoes')
     forma_apresentacao = models.CharField(
@@ -520,7 +610,7 @@ class ExtractedExam(models.Model):
 
 
 class ExamOrganFinding(models.Model):
-    """Achado por órgão em exames de imagem (ex.: ultrassom): órgão + descrição narrativa."""
+    """Finding by organ in imaging exams (e.g., ultrasound): organ + narrative description."""
     exam = models.ForeignKey(ExtractedExam, on_delete=models.CASCADE, related_name='organ_findings')
     organ_name = models.CharField(max_length=200, help_text='Nome do órgão ou estrutura (ex.: Rins, Vesícula urinária).')
     description = models.TextField(help_text='Descrição/achado para esse órgão.')
