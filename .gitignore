@@ -12,3 +12,4 @@ media_test/
 celerybeat-schedule
 venv
 .venv
+AGENTS.md
