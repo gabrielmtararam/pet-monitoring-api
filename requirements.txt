@@ -13,4 +13,9 @@ selenium
 webdriver-manager
 google-genai
 django-import-export
+pytest
+pytest-django
+model-bakery
+pytest-mock
+pytest-cov
 
