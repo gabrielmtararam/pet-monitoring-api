@@ -5,7 +5,12 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from google import genai
+import os
+from .exams_extraction import _get_genai_client
 from vet_exams.monitoring.exams_automation import run_login_automation, run_login_automation_receitas
+
+
 from vet_exams.monitoring.exams_extraction import process_first_downloaded_exam
 from vet_exams.monitoring.receitas_extraction import process_first_receita
 from vet_exams.monitoring.models import (
@@ -240,3 +245,131 @@ class ReceitasProcessAPIView(APIView):
         result = process_first_receita(request.user)
         response_status = status.HTTP_200_OK if result.get('success') else status.HTTP_400_BAD_REQUEST
         return Response(result, status=response_status)
+
+
+class ChatAPIView(APIView):
+    """
+    IA Chatbot endpoint for pet monitoring.
+    Receives a prompt and returns a response from Gemini, using Function Calling
+    and RAG for AnimalDiaryEntry context.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request: Request):
+        prompt = request.data.get('prompt')
+        animal_id = request.data.get('animal_id')
+
+        if not prompt:
+            return Response({'detail': 'O prompt é obrigatório.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            client = _get_genai_client()
+            from google.genai import types
+
+            def get_water_consumption(animal_id: int, start_date: str, end_date: str) -> dict:
+                """Obtém o consumo de água do animal entre as datas de início e fim.
+                Args:
+                    animal_id: ID do animal.
+                    start_date: Data inicial no formato YYYY-MM-DD.
+                    end_date: Data final no formato YYYY-MM-DD.
+                """
+                logs = DailyWaterConsumption.objects.filter(
+                    animal_id=animal_id,
+                    animal__guardian=request.user,
+                    date__gte=start_date,
+                    date__lte=end_date
+                ).order_by('date')
+                if not logs:
+                    return {"result": "Nenhum dado de consumo de água encontrado para este período."}
+                
+                result = "Consumo de Água (líquido em gramas):\n"
+                for log in logs:
+                    result += f"- {log.date}: {log.net_consumption}g\n"
+                return {"result": result}
+
+            def get_food_consumption(animal_id: int, start_date: str, end_date: str) -> dict:
+                """Obtém o consumo de ração do animal entre as datas de início e fim.
+                Args:
+                    animal_id: ID do animal.
+                    start_date: Data inicial no formato YYYY-MM-DD.
+                    end_date: Data final no formato YYYY-MM-DD.
+                """
+                logs = DailyFoodConsumption.objects.filter(
+                    animal_id=animal_id,
+                    animal__guardian=request.user,
+                    date__gte=start_date,
+                    date__lte=end_date
+                ).order_by('date')
+                if not logs:
+                    return {"result": "Nenhum dado de consumo de ração encontrado para este período."}
+                
+                result = "Consumo de Ração (total em gramas):\n"
+                for log in logs:
+                    result += f"- {log.date}: {log.total_consumption}g\n"
+                return {"result": result}
+
+            rag_context = ""
+            if animal_id:
+                diary_entries = AnimalDiaryEntry.objects.filter(
+                    animal_id=animal_id,
+                    animal__guardian=request.user
+                ).order_by('-observed_at')[:20]
+                
+                if diary_entries:
+                    rag_context = "Contexto do diário do animal (observações recentes):\n"
+                    for entry in diary_entries:
+                        # Exibe a data e texto
+                        rag_context += f"- Data {entry.observed_at.strftime('%Y-%m-%d %H:%M')}: {entry.text}\n"
+
+            system_instruction = (
+                "Você é um assistente virtual veterinário especializado em monitoramento de pets.\n"
+                "Para responder sobre histórico numérico de consumo, SEMPRE use as funções fornecidas.\n"
+                "Responda sempre em Português do Brasil.\n"
+                f"{rag_context}\n"
+                f"Hoje é {timezone.now().strftime('%Y-%m-%d')}.\n"
+            )
+            
+            if animal_id:
+                prompt_with_context = f"{system_instruction}\n(O animal atual que o usuário está monitorando tem o ID {animal_id})\nUsuário: {prompt}"
+            else:
+                prompt_with_context = f"{system_instruction}\nUsuário: {prompt}"
+
+            response = client.models.generate_content(
+                model="gemini-2.5-flash-lite",
+                contents=prompt_with_context,
+                config=types.GenerateContentConfig(
+                    tools=[get_water_consumption, get_food_consumption],
+                    temperature=0.2,
+                ),
+            )
+
+            if response.function_calls:
+                function_responses = []
+                for function_call in response.function_calls:
+                    if function_call.name == "get_water_consumption":
+                        result = get_water_consumption(**function_call.args)  # type: ignore
+                    elif function_call.name == "get_food_consumption":
+                        result = get_food_consumption(**function_call.args)  # type: ignore
+                    else:
+                        result = {"result": "Função desconhecida."}
+                    
+                    function_responses.append(
+                        types.Part.from_function_response(
+                            name=function_call.name,
+                            response=result
+                        )
+                    )
+
+                final_response = client.models.generate_content(
+                    model="gemini-2.5-flash-lite",
+                    contents=[
+                        prompt_with_context,
+                        response.candidates[0].content,
+                    ] + function_responses,
+                    config=types.GenerateContentConfig(temperature=0.2)
+                )
+                return Response({'response': final_response.text}, status=status.HTTP_200_OK)
+
+            return Response({'response': response.text}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
