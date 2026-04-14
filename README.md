@@ -1,5 +1,7 @@
 # Pet Monitoring API
 
+[![codecov](https://codecov.io/gh/gabrielmtararam/pet-monitoring-api/graph/badge.svg)](https://codecov.io/gh/gabrielmtararam/pet-monitoring-api)
+
 Backend para o sistema de monitoramento de exames veterinários.
 
 ## Deploy Automático
