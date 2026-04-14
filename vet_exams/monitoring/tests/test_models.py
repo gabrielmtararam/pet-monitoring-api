@@ -160,21 +160,24 @@ class TestFoodConsumptionRecalculation:
 
     def test_recalculate_food_no_logs(self, animal_with_user):
         animal = animal_with_user
-        now = timezone.now()
+        from datetime import datetime, time
+        today = timezone.localdate()
+        now = timezone.make_aware(datetime.combine(today, time(12, 0, 0)), timezone.get_current_timezone())
         log = baker.make(FoodWeightLog, animal=animal, weight=100, observed_at=now)
         FoodWeightLog.objects.filter(animal=animal).delete()
         recalculate_daily_food_consumption_for_log(log)
         assert not DailyFoodConsumption.objects.filter(animal=animal).exists()
 
     def test_recalculate_food_single_log(self, animal_with_user):
-        """Single log → missing_readings=True, total=0 → record created with total=0."""
+        """Single log → missing_readings=True → record deleted since no useful info."""
         animal = animal_with_user
-        now = timezone.now()
+        from datetime import datetime, time
+        today = timezone.localdate()
+        now = timezone.make_aware(datetime.combine(today, time(12, 0, 0)), timezone.get_current_timezone())
         log = baker.make(FoodWeightLog, animal=animal, weight=Decimal('200.00'), entry_type='reading', observed_at=now)
         recalculate_daily_food_consumption_for_log(log)
         log_date = timezone.localdate(log.observed_at)
-        # total=0 but missing_readings=True → record created per code logic
-        assert DailyFoodConsumption.objects.filter(animal=animal, date=log_date).exists()
+        assert not DailyFoodConsumption.objects.filter(animal=animal, date=log_date).exists()
 
     def test_recalculate_food_negative_delta(self, animal_with_user):
         """Weight increases → negative delta → total stays 0 → no record."""
